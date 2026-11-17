@@ -1335,7 +1335,28 @@ function publicLink(id){let base=publicBase();if(!base)return '';try{let u=new U
 function svgQR(url){if(!url)return '';try{const qr=new QRCodeLocal(0,QRModules.QRErrorCorrectLevel.M);qr.addData(url);qr.make();const n=qr.getModuleCount(),margin=4,size=n+2*margin;let p=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="white"/>`;for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(qr.isDark(r,c))p+=`<rect x="${c+margin}" y="${r+margin}" width="1" height="1" fill="#102d3c"/>`;return p+'</svg>'}catch(e){return ''}}
 function qrData(id){const svg=svgQR(publicLink(id));return svg?'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg):''}
 function saveQrSettings(){const inp=document.getElementById('publicUrlInput');if(!inp)return;let val=inp.value.trim();if(val){try{let u=new URL(val);if(!/^https?:$/.test(u.protocol))throw Error('bad');val=u.origin+u.pathname}catch(e){toast('Укажите полный адрес https://...');return}}localStorage.setItem('fitduo_public_url',val);render();toast('Адрес сохранён')}
-function openPublicMachine(){const id=Number(new URLSearchParams(location.search).get('machine'));if(!Number.isInteger(id)||id<1)return false;const m=state.machines.find(x=>x.id===id);document.querySelector('.sidebar')?.remove();document.querySelector('.topbar')?.remove();let root=document.querySelector('#content');if(!root)return false;document.body.classList.add('public-machine');if(!m){root.innerHTML='<div class="public-wrap"><h1>Тренажёр не найден</h1></div>';return true}root.innerHTML=`<main class="public-wrap"><div class="public-brand">ФитДуо</div><a class="public-back" href="${esc(location.pathname)}">← К кабинету</a><h1>${esc(m.name)}</h1><img class="public-photo" src="${esc(m.photo||'')}" alt="${esc(m.name)}"><section class="public-section"><h2>Работающие мышцы</h2><p>${esc(m.muscles||'—')}</p></section><section class="public-section"><h2>Техника выполнения</h2><p>${esc(m.desc||'Инструкция пока не добавлена')}</p></section><section class="public-section"><h2>Распространённые ошибки</h2><p>${esc(m.mistakes||'—')}</p></section></main>`;document.title=m.name+' — ФитДуо';return true}
+// FitDuo: public QR instruction view tracking (Supabase RPC).
+// This publishable key is designed for use in browser code; never place secret keys here.
+const FITDUO_SUPABASE_URL = 'https://vtxvxyxqihzgjxhmwkb.supabase.co';
+const FITDUO_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Z15_aQzaOdRX096S94bjzw_wPa6dVIr';
+function recordPublicMachineOpen(machineId) {
+  // Only count public-site visits, not local file previews or localhost testing.
+  if (location.hostname !== 'fitduo-site.github.io') return;
+  if (!Number.isInteger(machineId) || machineId < 1 || machineId > 20) return;
+  // A page refresh counts as a new open; this does not prove a physical QR scan.
+  fetch(FITDUO_SUPABASE_URL + '/rest/v1/rpc/record_machine_scan', {
+    method: 'POST',
+    headers: {
+      'apikey': FITDUO_SUPABASE_PUBLISHABLE_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ p_qr_number: machineId }),
+    keepalive: true
+  }).then(response => {
+    if (!response.ok) console.warn('FitDuo: QR view event not recorded (HTTP ' + response.status + ')');
+  }).catch(() => console.warn('FitDuo: QR view event could not be sent'));
+}
+function openPublicMachine(){const id=Number(new URLSearchParams(location.search).get('machine'));if(!Number.isInteger(id)||id<1)return false;const m=state.machines.find(x=>x.id===id);document.querySelector('.sidebar')?.remove();document.querySelector('.topbar')?.remove();let root=document.querySelector('#content');if(!root)return false;document.body.classList.add('public-machine');if(!m){root.innerHTML='<div class="public-wrap"><h1>Тренажёр не найден</h1></div>';return true}root.innerHTML=`<main class="public-wrap"><div class="public-brand">ФитДуо</div><a class="public-back" href="${esc(location.pathname)}">← К кабинету</a><h1>${esc(m.name)}</h1><img class="public-photo" src="${esc(m.photo||'')}" alt="${esc(m.name)}"><section class="public-section"><h2>Работающие мышцы</h2><p>${esc(m.muscles||'—')}</p></section><section class="public-section"><h2>Техника выполнения</h2><p>${esc(m.desc||'Инструкция пока не добавлена')}</p></section><section class="public-section"><h2>Распространённые ошибки</h2><p>${esc(m.mistakes||'—')}</p></section></main>`;document.title=m.name+' — ФитДуо';recordPublicMachineOpen(id);return true}
 
 function qrImg(id){return QR_ASSETS[id]||QR_ASSETS[1]}function chart(){let vals=[12,16,15,23,20,27,23,33,29,37,36,44],pts=vals.map((v,i)=>`${20+i*47},${245-v*4.4}`).join(' ');return `<div class="chart"><svg viewBox="0 0 560 270" preserveAspectRatio="none" aria-label="График использования инструкций"><line x1="10" y1="250" x2="550" y2="250" stroke="#dce8ed"/><polyline points="${pts}" fill="none" stroke="#16b4a6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>${vals.map((v,i)=>`<circle cx="${20+i*47}" cy="${245-v*4.4}" r="5" fill="#16b4a6"/>`).join('')}</svg></div>`}
 function home(){return head('Главная — обзор ФитДуо','Показатели использования QR-инструкций в вашем клубе')+`<div class="grid stats-grid">${stat('0','Сканирований за 30 дней')}${stat('0','Открытий инструкций')}${stat(state.machines.filter(m=>m.status).length,'Активных тренажёра')}${stat('60','Лимит тарифа')}</div><div class="grid two-grid section-gap">${card('Использование инструкций по дням',chart()+``)}${card('Быстрые действия',button('＋ Добавить тренажёр','add','full')+button('▦ Создать QR-код','openqr','full')+button('▣ Открыть инструкции','openinstructions','full')+'<p class="muted tiny">Только функции приложения ФитДуо</p>')}</div><div class="section-gap">${card('Последние действия',`<ul class="activity">${state.logs.slice(0,5).map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`)}</div>`}
